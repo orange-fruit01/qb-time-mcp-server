@@ -2,6 +2,15 @@ import requests
 from typing import Dict, Any, Optional, List, Union
 from utils import setup_logging, log_info, log_error
 from datetime import datetime
+import quickbooks_api
+import mock_quickbooks_api
+
+# QuickBooks API Base URLs
+QUICKBOOKS_PRODUCTION_URL = "https://quickbooks.api.intuit.com"
+QUICKBOOKS_SANDBOX_URL = "https://sandbox-quickbooks.api.intuit.com"
+
+# Flag to use mock implementation (set to True for testing)
+USE_MOCK_IMPLEMENTATION = True
 
 class BaseAPI:
     def __init__(self, access_token: str):
@@ -48,45 +57,39 @@ class BaseAPI:
         for key, value in clean_params.items():
             if isinstance(value, list):
                 if key == 'jobcode_ids':
-                    # Convert jobcode_ids to array of strings but keep as array
-                    clean_params[key] = [str(x) for x in value]
-                else:
-                    clean_params[key] = ','.join(map(str, value))
-
-        # Ensure limit doesn't exceed 200
-        if 'limit' in clean_params:
-            clean_params['limit'] = min(clean_params['limit'], 200)
+                    continue  # Skip jobcode_ids as it's handled differently
+                clean_params[key] = ','.join(map(str, value))
 
         return clean_params
 
     def handle_axios_error(self, error: Exception, operation: str):
-        if isinstance(error, requests.exceptions.RequestException):
-            if error.response is not None:
-                # The request was made and the server responded with a status code
-                # that falls out of the range of 2xx
-                error_message = error.response.json().get('error', {}).get('message') or error.response.reason
-                log_error(f"{operation} failed: {error.response.status_code} - {error_message}")
-                raise ValueError(f"{operation} failed: {error.response.status_code} - {error_message}")
-            elif error.request is not None:
-                # The request was made but no response was received
-                log_error(f"{operation} failed: No response received")
-                raise ValueError(f"{operation} failed: No response received from server")
-            else:
-                # Something happened in setting up the request
-                log_error(f"{operation} failed: {str(error)}")
-                raise ValueError(f"{operation} failed: {str(error)}")
-        else:
-            log_error(f"{operation} failed: {str(error)}")
-            raise ValueError(f"{operation} failed: {str(error)}")
+        """Handle errors from API requests."""
+        log_error(f"Error during {operation}: {str(error)}")
+        
+        if hasattr(error, 'response'):
+            response = error.response
+            if hasattr(response, 'status') and hasattr(response, 'data'):
+                log_error(f"Status: {response.status}, Data: {response.data}")
+                return {
+                    'error': True,
+                    'status': response.status,
+                    'message': str(response.data)
+                }
+        
+        return {
+            'error': True,
+            'message': str(error)
+        }
 
     def make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None):
-        """Make a request to the QuickBooks Time API."""
+        """Make a GET request to the API."""
+        url = f"{self.base_url}/{endpoint}"
         try:
-            response = requests.get(f'{self.base_url}/{endpoint}', headers=self.headers, params=params)
+            response = requests.get(url, headers=self.headers, params=params)
             response.raise_for_status()
             return response.json()
-        except Exception as error:
-            return self.handle_axios_error(error, f'API request to {endpoint}')
+        except Exception as e:
+            return self.handle_axios_error(e, f"GET {endpoint}")
 
 class JobcodeAPI(BaseAPI):
     def get_jobcodes(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1617,40 +1620,152 @@ class CustomFieldsAPI(BaseAPI):
         clean_params = self.add_pagination_params(params)
         return self.make_request('customfields', params=clean_params)
 
+class QuickBooksAPI(BaseAPI):
+    """API class for interacting with the QuickBooks API."""
+    
+    def __init__(self, access_token: str, environment: str = 'production'):
+        super().__init__(access_token)
+        self.environment = environment
+        
+        # Use mock implementation if flag is set
+        if USE_MOCK_IMPLEMENTATION:
+            self.api_module = mock_quickbooks_api
+            log_info("Using MOCK QuickBooks API implementation")
+        else:
+            self.api_module = quickbooks_api
+            log_info("Using REAL QuickBooks API implementation")
+            
+        self.api_module.set_environment(environment)
+    
+    def get_company_info(self, company_id: str) -> Dict[str, Any]:
+        """
+        Get company information from QuickBooks API
+        
+        Args:
+            company_id (str): The company ID
+            
+        Returns:
+            dict: The company information
+        """
+        return self.api_module.get_company_info(company_id)
+    
+    def get_employees(self, company_id: str) -> Dict[str, Any]:
+        """
+        Get employees from QuickBooks API
+        
+        Args:
+            company_id (str): The company ID
+            
+        Returns:
+            dict: The employees information
+        """
+        return self.api_module.get_employees(company_id)
+    
+    def get_customers(self, company_id: str) -> Dict[str, Any]:
+        """
+        Get customers from QuickBooks API
+        
+        Args:
+            company_id (str): The company ID
+            
+        Returns:
+            dict: The customers information
+        """
+        return self.api_module.get_customers(company_id)
+    
+    def get_invoices(self, company_id: str) -> Dict[str, Any]:
+        """
+        Get invoices from QuickBooks API
+        
+        Args:
+            company_id (str): The company ID
+            
+        Returns:
+            dict: The invoices information
+        """
+        return self.api_module.get_invoices(company_id)
+
 class QuickBooksTimeAPI(BaseAPI):
+    """Main API class that combines all QuickBooks Time API functionality."""
+    
     def __init__(self, access_token: str):
         super().__init__(access_token)
         self.jobcode_api = JobcodeAPI(access_token)
         self.timesheet_api = TimesheetAPI(access_token)
         self.user_api = UserAPI(access_token)
-        self.custom_fields_api = CustomFieldsAPI(access_token)
-        self.project_management_api = ProjectManagementAPI(access_token)
+        self.project_api = ProjectManagementAPI(access_token)
         self.last_modified_api = LastModifiedAPI(access_token)
         self.notifications_api = NotificationsAPI(access_token)
         self.additional_features_api = AdditionalFeaturesAPI(access_token)
         self.reports_api = ReportsAPI(access_token)
-        self.validate_token()
-
+        self.custom_fields_api = CustomFieldsAPI(access_token)
+        
+        # Initialize QuickBooks API with separate token
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        qb_access_token = os.getenv('QB_ACCESS_TOKEN')
+        qb_environment = os.getenv('QB_ENVIRONMENT', 'production')
+        self.quickbooks_api = QuickBooksAPI(qb_access_token or access_token, qb_environment)
+        
+        # Set up logging
+        setup_logging()
+        
+        # Log whether we're using mock implementation
+        if USE_MOCK_IMPLEMENTATION:
+            log_info("QuickBooksTimeAPI initialized with MOCK QuickBooks API implementation")
+        else:
+            log_info("QuickBooksTimeAPI initialized with REAL QuickBooks API implementation")
+    
     def validate_token(self) -> bool:
+        """Validate the access token by making a simple API request."""
         try:
             response = requests.get(
-                f'{self.base_url}/current_user',
+                f"{self.base_url}/current_user",
                 headers=self.headers
             )
-            response.raise_for_status()
-            log_info('Token validation successful')
-            return True
-        except requests.exceptions.RequestException as error:
-            if error.response is not None:
-                raise ValueError(f'Token validation failed: {error.response.status_code} - {error.response.reason}')
-            elif error.request is not None:
-                raise ValueError('Token validation failed: No response received from server')
-            else:
-                raise ValueError(f'Token validation failed: {str(error)}')
-
+            if response.status_code == 200:
+                return True
+            log_error(f"Token validation failed: {response.status_code} - {response.text}")
+            return False
+        except Exception as e:
+            log_error(f"Token validation error: {str(e)}")
+            return False
+    
+    # QuickBooks API methods
+    def get_company_info(self, params: Dict[str, Any]):
+        """Get company information from QuickBooks API."""
+        company_id = params.get('company_id')
+        if not company_id:
+            return {'error': True, 'message': 'company_id is required'}
+        return self.quickbooks_api.get_company_info(company_id)
+    
+    def get_employees(self, params: Dict[str, Any]):
+        """Get employees from QuickBooks API."""
+        company_id = params.get('company_id')
+        if not company_id:
+            return {'error': True, 'message': 'company_id is required'}
+        return self.quickbooks_api.get_employees(company_id)
+    
+    def get_customers(self, params: Dict[str, Any]):
+        """Get customers from QuickBooks API."""
+        company_id = params.get('company_id')
+        if not company_id:
+            return {'error': True, 'message': 'company_id is required'}
+        return self.quickbooks_api.get_customers(company_id)
+    
+    def get_invoices(self, params: Dict[str, Any]):
+        """Get invoices from QuickBooks API."""
+        company_id = params.get('company_id')
+        if not company_id:
+            return {'error': True, 'message': 'company_id is required'}
+        return self.quickbooks_api.get_invoices(company_id)
+    
+    # Existing methods
     def get_jobcodes(self, params: Optional[Dict[str, Any]] = None):
+        """Get jobcodes with filtering options."""
         return self.jobcode_api.get_jobcodes(params)
-
+    
     def get_jobcode(self, params: Dict[str, Any]):
         return self.jobcode_api.get_jobcode(params.get('id'))
 
@@ -1685,10 +1800,10 @@ class QuickBooksTimeAPI(BaseAPI):
         return self.custom_fields_api.get_custom_fields(params)
 
     def get_projects(self, params: Optional[Dict[str, Any]] = None):
-        return self.project_management_api.get_projects(params)
+        return self.project_api.get_projects(params)
 
     def get_project_activities(self, params: Optional[Dict[str, Any]] = None):
-        return self.project_management_api.get_project_activities(params)
+        return self.project_api.get_project_activities(params)
 
     def get_last_modified(self, params: Optional[Dict[str, Any]] = None):
         return self.last_modified_api.get_last_modified(params.get('types'))

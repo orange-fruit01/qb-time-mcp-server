@@ -1,11 +1,12 @@
 import json
 import sys
-import anyio
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-import mcp.types as types
+import os
+from dotenv import load_dotenv
 from api import QuickBooksTimeAPI
 from utils import setup_logging, log_info, log_error
+
+# Flag to use mock implementation (set to True for testing)
+USE_MOCK_IMPLEMENTATION = True
 
 JSONRPC_VERSION = "2.0"
 PROTOCOL_VERSION = "2024-11-05"
@@ -16,6 +17,52 @@ SERVER_INFO = {
     "vendor": "QuickBooks Time API Client",
     "description": "Access QuickBooks Time data through these API tools.",
     "tools": [
+        # QuickBooks API Tools
+        {
+            "name": "get_company_info",
+            "description": "Get company information from QuickBooks API. Returns detailed company data including name, address, and settings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "company_id": {"type": "string", "description": "The company ID to retrieve information for"}
+                },
+                "required": ["company_id"]
+            }
+        },
+        {
+            "name": "get_employees",
+            "description": "Get employees from QuickBooks API. Returns a list of employees with their details.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "company_id": {"type": "string", "description": "The company ID to retrieve employees for"}
+                },
+                "required": ["company_id"]
+            }
+        },
+        {
+            "name": "get_customers",
+            "description": "Get customers from QuickBooks API. Returns a list of customers with their details.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "company_id": {"type": "string", "description": "The company ID to retrieve customers for"}
+                },
+                "required": ["company_id"]
+            }
+        },
+        {
+            "name": "get_invoices",
+            "description": "Get invoices from QuickBooks API. Returns a list of invoices with their details.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "company_id": {"type": "string", "description": "The company ID to retrieve invoices for"}
+                },
+                "required": ["company_id"]
+            }
+        },
+        # Existing QuickBooks Time API Tools
         {
             "name": "get_jobcodes",
             "description": "Get jobcodes from QuickBooks Time with advanced filtering options. Returns jobcode details including name, type, and status.",
@@ -496,17 +543,24 @@ class JSONRPCServer:
         self.message_buffer = ''
         self.message_counter = 0
         setup_logging()
+        
+        if USE_MOCK_IMPLEMENTATION:
+            log_info("Server initialized with MOCK QuickBooks API implementation")
+        else:
+            log_info("Server initialized with REAL QuickBooks API implementation")
 
     def get_next_id(self) -> str:
+        """Get the next message ID."""
         self.message_counter += 1
-        return str(self.message_counter)
+        return f"server-{self.message_counter}"
 
     def send_response(self, response: dict):
-        response_str = json.dumps(response)
-        sys.stdout.write(response_str + '\n')
+        """Send a JSON-RPC response."""
+        print(json.dumps(response))
         sys.stdout.flush()
 
     def send_error_response(self, id: str, code: int, message: str, data=None):
+        """Send a JSON-RPC error response."""
         self.send_response({
             'jsonrpc': JSONRPC_VERSION,
             'id': id,
@@ -518,27 +572,34 @@ class JSONRPCServer:
         })
 
     def handle_initialize(self, message: dict):
+        """Handle the initialize method."""
         if 'id' not in message:
             self.send_error_response(self.get_next_id(), -32600, 'Initialize must include an id')
+            return
+
+        params = message.get('params', {})
+        protocol_version = params.get('protocolVersion')
+
+        if protocol_version != PROTOCOL_VERSION:
+            self.send_error_response(
+                message['id'],
+                -32602,
+                f'Unsupported protocol version: {protocol_version}. Expected: {PROTOCOL_VERSION}'
+            )
             return
 
         self.send_response({
             'jsonrpc': JSONRPC_VERSION,
             'id': message['id'],
             'result': {
-                'protocolVersion': PROTOCOL_VERSION,
-                'capabilities': {
-                    'tools': {
-                        'listChanged': True
-                    }
-                },
                 'serverInfo': SERVER_INFO
             }
         })
 
     def handle_tools_list(self, message: dict):
+        """Handle the tools/list method."""
         if 'id' not in message:
-            self.send_error_response(self.get_next_id(), -32600, 'Tools list request must include an id')
+            self.send_error_response(self.get_next_id(), -32600, 'Tools list must include an id')
             return
 
         self.send_response({
@@ -550,6 +611,7 @@ class JSONRPCServer:
         })
 
     def handle_tools_call(self, message: dict):
+        """Handle the tools/call method."""
         if 'id' not in message:
             self.send_error_response(self.get_next_id(), -32600, 'Tools call must include an id')
             return
@@ -562,7 +624,15 @@ class JSONRPCServer:
             self.send_error_response(message['id'], -32602, 'Invalid params: must include name and arguments')
             return
 
+        # Map tool names to API methods
         method_map = {
+            # QuickBooks API methods
+            'get_company_info': self.api.get_company_info,
+            'get_employees': self.api.get_employees,
+            'get_customers': self.api.get_customers,
+            'get_invoices': self.api.get_invoices,
+            
+            # QuickBooks Time API methods
             'get_jobcodes': self.api.get_jobcodes,
             'get_jobcode': self.api.get_jobcode,
             'get_jobcode_hierarchy': self.api.get_jobcode_hierarchy,
@@ -590,7 +660,10 @@ class JSONRPCServer:
             return
 
         try:
+            log_info(f"Calling {name} with args: {json.dumps(args)}")
             result = method_map[name](args)
+            log_info(f"Result from {name}: {json.dumps(result)[:200]}...")
+            
             self.send_response({
                 'jsonrpc': JSONRPC_VERSION,
                 'id': message['id'],
@@ -606,10 +679,12 @@ class JSONRPCServer:
             self.send_error_response(message['id'], -32000, str(e))
 
     def handle_message(self, message_str: str):
+        """Handle an incoming JSON-RPC message."""
         message_id = self.get_next_id()
 
         try:
             message = json.loads(message_str)
+            log_info(f"Received message: {message_str[:100]}...")
 
             if 'method' not in message:
                 self.send_error_response(
@@ -635,6 +710,7 @@ class JSONRPCServer:
             self.send_error_response(message_id, -32700, 'Parse error')
 
     def send_server_info(self):
+        """Send server information."""
         self.send_response({
             'jsonrpc': JSONRPC_VERSION,
             'method': 'server/info',
@@ -644,6 +720,7 @@ class JSONRPCServer:
         })
 
     def start(self):
+        """Start the server."""
         log_info('QuickBooks Time MCP Server Starting')
         log_info(f'Environment: {{"tokenConfigured": {bool(self.api.access_token)}, "nodeEnv": "{self.node_env}"}}')
 
@@ -662,19 +739,23 @@ class JSONRPCServer:
                 break
 
 def run_server(access_token: str, node_env: str = 'development'):
+    """Run the server with the given access token and environment."""
     server = JSONRPCServer(access_token, node_env)
     server.start()
 
 if __name__ == "__main__":
-    import os
-    from dotenv import load_dotenv
     load_dotenv()
 
     access_token = os.getenv('QB_TIME_ACCESS_TOKEN')
     node_env = os.getenv('NODE_ENV', 'development')
 
-    if not access_token:
-        print("QB_TIME_ACCESS_TOKEN environment variable is required")
+    if not access_token and not USE_MOCK_IMPLEMENTATION:
+        print("QB_TIME_ACCESS_TOKEN environment variable is required when not using mock implementation")
         sys.exit(1)
+    
+    # Use a dummy token if using mock implementation and no token is provided
+    if USE_MOCK_IMPLEMENTATION and not access_token:
+        access_token = "mock_access_token"
+        log_info("Using mock access token for testing")
 
     run_server(access_token, node_env)
