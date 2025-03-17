@@ -1,0 +1,19 @@
+{
+  "name": "quickbooks-integration",
+  "version": "1.0.0",
+  "description": "QuickBooks API integration",
+  "main": "index.js",
+  "scripts": {
+    "refresh-token": "node refresh_token.js",
+    "company-info": "node get_company_info.js",
+    "oauth-setup": "node oauth_setup.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "intuit-oauth": "^4.2.0",
+    "node-quickbooks": "^2.0.43"
+  }
+}
