@@ -25,8 +25,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 # Set your OAuth credentials here
-CLIENT_ID = "ABWUDqtb49DQVW324w0AVGof0HBlr19CZ8LFRAq0X0jwZM4YRZ"
-CLIENT_SECRET = "pBTxHLpgH4ba6gWYgdyRenBuQfrUB41dglSbwRZz"
+CLIENT_ID = "ABa40QwqKXOuJtJ47KVQTt2kptGiHxQGsD9FeYF2Hgl4uFapqW"
+CLIENT_SECRET = "BgYd2H0adW27negDIjGzRYYDzGwM0QFic7kkrVQn"
 REDIRECT_URI = "http://localhost:8000/callback"
 
 # QuickBooks Time OAuth endpoints
