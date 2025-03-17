@@ -1,0 +1,10 @@
+name = "quickbooks-mcp-worker"
+main = "src/index.ts"
+compatibility_date = "2024-03-14"
+
+[vars]
+QB_COMPANY_ID = "9341454278137598"
+QB_ENVIRONMENT = "production"
+
+# The SHARED_SECRET will be set by the workers-mcp setup command
+# Do not set it manually here 

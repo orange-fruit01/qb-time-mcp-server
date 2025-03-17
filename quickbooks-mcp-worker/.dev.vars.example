@@ -1,0 +1,5 @@
+QB_COMPANY_ID=9341454278137598
+QB_ENVIRONMENT=production
+QB_ACCESS_TOKEN=your_quickbooks_access_token
+QB_TIME_ACCESS_TOKEN=your_quickbooks_time_access_token
+SHARED_SECRET=your_shared_secret_will_be_set_by_workers_mcp_setup 

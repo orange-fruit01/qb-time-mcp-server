@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from api import QuickBooksTimeAPI
 from utils import setup_logging, log_info, log_error
+import mcp_integration  # Import the MCP integration module
 
 # Flag to use mock implementation (set to True for testing)
 USE_MOCK_IMPLEMENTATION = True
@@ -532,6 +533,61 @@ SERVER_INFO = {
                     }
                 }
             }
+        },
+        # QuickBooks MCP Report Tools
+        {
+            "name": "getBalanceSheetReport",
+            "description": "Get balance sheet report from QuickBooks API. Returns a detailed balance sheet with assets, liabilities, and equity.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "getProfitAndLossReport",
+            "description": "Get profit and loss report from QuickBooks API. Returns a detailed income statement with revenue, expenses, and net income.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "getCashFlowReport",
+            "description": "Get cash flow report from QuickBooks API. Returns a detailed cash flow statement showing cash inflows and outflows.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "getTrialBalanceReport",
+            "description": "Get trial balance report from QuickBooks API. Returns a list of all accounts with their debit and credit balances.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "getAccountsReceivableReport",
+            "description": "Get accounts receivable aging report from QuickBooks API. Returns details of outstanding customer invoices.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "getAccountsPayableReport",
+            "description": "Get accounts payable aging report from QuickBooks API. Returns details of outstanding vendor bills.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
         }
     ]
 }
@@ -652,7 +708,24 @@ class JSONRPCServer:
             'get_current_totals': self.api.get_current_totals,
             'get_payroll': self.api.get_payroll,
             'get_payroll_by_jobcode': self.api.get_payroll_by_jobcode,
-            'get_project_report': self.api.get_project_report
+            'get_project_report': self.api.get_project_report,
+            
+            # QuickBooks MCP methods
+            'getBalanceSheetReport': mcp_integration.get_balance_sheet_report,
+            'getProfitAndLossReport': mcp_integration.get_profit_and_loss_report,
+            'getCashFlowReport': mcp_integration.get_cash_flow_report,
+            'getTrialBalanceReport': mcp_integration.get_trial_balance_report,
+            'getAccountsReceivableReport': mcp_integration.get_accounts_receivable_report,
+            'getAccountsPayableReport': mcp_integration.get_accounts_payable_report,
+            'getCustomerIncomeReport': mcp_integration.get_customer_income_report,
+            'getVendorExpensesReport': mcp_integration.get_vendor_expenses_report,
+            'getAccounts': mcp_integration.get_accounts,
+            'getItems': mcp_integration.get_items,
+            'getPayments': mcp_integration.get_payments,
+            'getBills': mcp_integration.get_bills,
+            'getVendors': mcp_integration.get_vendors,
+            'getPurchaseOrders': mcp_integration.get_purchase_orders,
+            'getJournalEntries': mcp_integration.get_journal_entries
         }
 
         if name not in method_map:
